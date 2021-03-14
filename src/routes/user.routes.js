@@ -60,11 +60,29 @@ router.post("/user/signup", async (req, res) => {
         to: email,
         from: "carlosgevara100@gmail.com",
         subject: "Signup succeeded!",
-        html: `<h1>You successfully signed up!</h1>`,
+        html: `<h1>You successfully signed up!</h1>
+        <p>Click this <a href="http://${req.headers.host}/user/confirmar/${email}">Link for active your account</a>
+        `,
       };
       return sgMail.send(msg);
     }
   }
+});
+
+/* ********************************  CONFIRM EMAIL ******************************** */
+router.get("/user/confirmar/:email", async (req, res) => {
+  const { email } = req.params;
+  const user = await User.findOne({ email: email });
+
+  if (!user) {
+    req.flash("errorMessage", "This token no exist");
+    return res.redirect("/user/signup");
+  }
+
+  user.active = true;
+  await user.save();
+  req.flash("successMessage", "Account created successfully");
+  res.redirect("/user/signin");
 });
 
 /* ********************************  VISTA SIGNIN ******************************** */

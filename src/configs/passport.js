@@ -12,6 +12,11 @@ passport.use(
     },
     async (email, password, done) => {
       const userFind = await User.findOne({ email: email });
+      if (!userFind.active) {
+        console.log("user inactivo... Verifica tu correo");
+        return done(null, false, { message: "Active your account from email" });
+      }
+
       if (!userFind) {
         return done(null, false, { message: "User not found." });
       } else {
