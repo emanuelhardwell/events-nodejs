@@ -6,13 +6,17 @@ const router = express.Router();
 const User = require("../models/User");
 const { isNotAuthenticated } = require("../helpers/auth");
 
+const crypto = require("crypto");
+
 const sgMail = require("@sendgrid/mail");
 sgMail.setApiKey(process.env.SEND_GRID_KEY);
 
+/* ********************************  VIEW SIGNUP ******************************** */
 router.get("/user/signup", isNotAuthenticated, (req, res) => {
   res.render("users/signup");
 });
 
+/* ********************************  POST SIGNUP ******************************** */
 router.post("/user/signup", async (req, res) => {
   const { name, email, password, passwordConfirm } = req.body;
   let errors = [];
@@ -63,10 +67,13 @@ router.post("/user/signup", async (req, res) => {
   }
 });
 
+/* ********************************  VISTA SIGNIN ******************************** */
+
 router.get("/user/signin", isNotAuthenticated, (req, res) => {
   res.render("users/signin");
 });
 
+/* ********************************  POST SIGNIN ******************************** */
 router.post(
   "/user/signin",
   passport.authenticate("local", {
@@ -76,11 +83,100 @@ router.post(
   })
 );
 
-/* logout */
+/* ********************************  GET LOGOUT ******************************** */
 router.get("/user/logout", (req, res) => {
   req.logout();
   req.flash("successMessage", "You are logged out now.");
   res.redirect("/");
+});
+
+/* ********************************  VIEW RESET ******************************** */
+router.get("/user/reset", (req, res) => {
+  res.render("users/reset");
+});
+
+/* ********************************  POST RESET ******************************** */
+router.post("/user/reset", async (req, res) => {
+  const { email } = req.body;
+
+  const searchEmail = await User.findOne({ email: email });
+
+  if (!searchEmail) {
+    console.log("Este email no existe");
+    return res.redirect("/user/reset");
+  }
+
+  let token = crypto.randomBytes(64).toString("hex");
+
+  searchEmail.resetToken = token;
+  searchEmail.resetTokenExpiration = Date.now() + 3600000;
+  await searchEmail.save();
+
+  const resetMsg = {
+    to: email,
+    from: "carlosgevara100@gmail.com",
+    subject: "Password Reset",
+    html: `
+      <p>Your reseted password </p>
+      <p>Click this <a href="http://${req.headers.host}/user/reset/${token}">Link</a>
+        a <strong>other password</strong>
+      </p>
+    `,
+  };
+  res.redirect("/");
+  return sgMail.send(resetMsg);
+});
+
+/* ********************************  VIEW RESET TOKEN ******************************** */
+router.get("/user/reset/:token", async (req, res) => {
+  const { token } = req.params;
+  const user = await User.findOne({
+    resetToken: token,
+    resetTokenExpiration: { $gt: Date.now() },
+  });
+
+  if (!user) {
+    console.log("TOKEN no valido");
+    req.flash("successMessage", "This token no exist");
+    return res.redirect("/");
+  }
+
+  res.render("users/new-password", {
+    userId: user._id.toString(),
+    passwordToken: token,
+  });
+});
+
+/* ********************************  POST NEW PASSWORD ******************************** */
+router.post("/user/new-password", async (req, res) => {
+  const { password, passwordConfirm, userId, passwordToken } = req.body;
+
+  if (password !== passwordConfirm) {
+    req.flash("successMessage", "The email are  different");
+    return res.redirect("/");
+  }
+
+  try {
+    const user = await User.findOne({
+      resetToken: passwordToken,
+      resetTokenExpiration: { $gt: Date.now() },
+      _id: userId,
+    });
+
+    if (!user) {
+      req.flash("successMessage", "The user not exist");
+      return res.redirect("/");
+    }
+
+    user.password = await user.encryptPassword(password);
+    user.resetToken = undefined;
+    user.resetTokenExpiration = undefined;
+    await user.save();
+
+    res.redirect("/user/signin");
+  } catch (error) {
+    console.log(error);
+  }
 });
 
 module.exports = router;
